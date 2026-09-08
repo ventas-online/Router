@@ -38,8 +38,11 @@ class Router:
                         usage=event.get("usage") or usage;selected_model=event.get("model") or selected_model;yield event
                     p.record_success();self.usage_tracker.record(p.name,selected_model,usage);return
                 except (QuotaExceededError,RateLimitError,ProviderError,NotImplementedError) as e:
+                    if saw_output:
+                        p.record_failure()
+                        raise
                     failures.append(str(e));p.record_failure();attempts+=1
-                    if saw_output or attempts>self.max_retries or isinstance(e,QuotaExceededError):break
+                    if attempts>self.max_retries or isinstance(e,QuotaExceededError):break
                     time.sleep(self.base_delay*(2**(attempts-1)))
         raise AllProvidersExhausted(failures)
     def list_skills(self):return self.skill_registry.list()
