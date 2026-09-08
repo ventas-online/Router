@@ -39,7 +39,6 @@ class StreamingTests(unittest.TestCase):
         events = list(Router([provider]).stream([{"role": "user", "content": "hi"}]))
         self.assertEqual("hello", "".join(e.get("content", "") for e in events if e["type"] == "delta"))
         self.assertEqual(0, provider.consecutive_failures)
-        self.assertEqual(5, provider.usage_tracker.get_day_usage("primary")) if False else None
 
     def test_stream_fails_over_before_first_delta(self):
         first = StreamingProvider("first", 1, [], fail="error")
