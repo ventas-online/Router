@@ -1,0 +1,15 @@
+# Secretos
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Datos locales del router
+usage.json
+
+# Sistema
+.DS_Store
