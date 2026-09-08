@@ -1,0 +1,6 @@
+# Sin dependencias obligatorias: solo usa la stdlib de Python 3.9+.
+# (No necesitas pip install nada para que funcione.)
+
+# Opcionales si algún día quieres usarlos:
+# python-dotenv==1.0.1
+# requests>=2.31
