@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Union
 
 
-def load_env(path: str | Path | None = None) -> Dict[str, str]:
+def load_env(path: Optional[Union[str, Path]] = None) -> Dict[str, str]:
     """Lee un archivo .env (si existe) y devuelve un dict con las variables.
 
     Las variables ya presentes en os.environ tienen prioridad (no se pisan).
@@ -15,7 +15,6 @@ def load_env(path: str | Path | None = None) -> Dict[str, str]:
     if path is None:
         path = Path(__file__).resolve().parent.parent / ".env"
     path = Path(path)
-
     if path.exists():
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
@@ -26,7 +25,6 @@ def load_env(path: str | Path | None = None) -> Dict[str, str]:
             value = value.strip().strip('"').strip("'")
             if key and key not in env:
                 env[key] = value
-
     for key, value in os.environ.items():
         env[key] = value
     return env
