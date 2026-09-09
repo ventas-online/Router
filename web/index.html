@@ -21,7 +21,7 @@
       </form>
       <div class="auth-error" id="authError" role="alert"></div>
       <button class="auth-switch" id="authSwitch" type="button">Create an account</button>
-      <small class="auth-note">Your conversations are isolated to your account.</small>
+      <small class="auth-note">Your conversations and projects are isolated to your account.</small>
     </div>
   </section>
 
@@ -29,6 +29,12 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand"><div class="brand-mark">R</div><div><strong>Router</strong><span>AI Workspace</span></div></div>
       <button class="new-chat" id="newChat">＋ New chat</button>
+      <div class="project-panel">
+        <label class="history-label" for="projectSelect">PROJECT</label>
+        <select id="projectSelect" class="project-select" aria-label="Active project"></select>
+        <div class="project-hint" id="projectHint">Loading project…</div>
+        <div class="project-usage" id="projectUsage">Usage loading…</div>
+      </div>
       <div class="history-label">RECENT</div>
       <div class="history" id="history"></div>
       <div class="sidebar-bottom">
