@@ -57,16 +57,19 @@ class Handler(BaseHTTPRequestHandler):
     def _current_user(self):return STORE.get_user_by_session(self._session_token())
     def _bearer_key(self):
         value=self.headers.get("Authorization",""); prefix="Bearer "; return value[len(prefix):].strip() if value.startswith(prefix) else None
-    def _auth_context(self):
+    def _auth_context(self,requested_project_id=None):
         raw=self._bearer_key()
         if raw:
             auth=API_KEYS.authenticate_key(raw)
             if not auth:return self._send(401,{"error":"Invalid or revoked API key","code":"INVALID_API_KEY"}) or None
+            if requested_project_id and requested_project_id!=auth["project_id"]:return self._send(403,{"error":"API key is scoped to another project","code":"PROJECT_MISMATCH"}) or None
             return {"user":{"id":auth["user_id"],"email":auth["project_name"]},"project_id":auth["project_id"],"api_key_id":auth["api_key_id"]}
-        if not AUTH_REQUIRED:return {"user":{"id":"anonymous","email":"anonymous"},"project_id":None,"api_key_id":None}
+        if not AUTH_REQUIRED:return {"user":{"id":"anonymous","email":"anonymous"},"project_id":requested_project_id,"api_key_id":None}
         user=self._current_user()
         if not user:self._send(401,{"error":"Authentication required","code":"AUTH_REQUIRED"}); return None
-        return {"user":user,"project_id":None,"api_key_id":None}
+        if requested_project_id:
+            if not API_KEYS.get_project(user["id"],requested_project_id):return self._send(404,{"error":"Project not found"}) or None
+        return {"user":user,"project_id":requested_project_id,"api_key_id":None}
     def _require_session_user(self):
         if not AUTH_REQUIRED:return {"id":"anonymous","email":"anonymous"}
         user=self._current_user()
@@ -96,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         if path.startswith("/api/") and self._rate_limited():return self._send(429,{"error":"Too many requests"})
-        if path=="/api/health":return self._send(200,{"ok":True,"providers":len(ROUTER.providers()),"version":"web-v6-api-keys"})
+        if path=="/api/health":return self._send(200,{"ok":True,"providers":len(ROUTER.providers()),"version":"web-v7-projects"})
         if path=="/api/auth/me":
             user=self._current_user(); return self._send(200,{"authenticated":bool(user),"user":user})
         user=self._require_session_user() if (path=="/api/projects" or path=="/api/keys" or path.startswith("/api/projects/")) else None
@@ -115,9 +118,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/conversations/"):
             item=STORE.get_conversation(user["id"],path.rsplit("/",1)[-1]); return self._send(200,item) if item else self._send(404,{"error":"Conversation not found"})
         if path=="/api/analytics":return self._send(200,STORE.analytics(user["id"]))
-        if path.startswith("/api/usage/") and context.get("project_id"):
+        if path.startswith("/api/usage/"):
             project_id=path.rsplit("/",1)[-1]
-            if project_id!=context["project_id"]:return self._send(403,{"error":"Forbidden"})
+            if not API_KEYS.get_project(user["id"],project_id):return self._send(404,{"error":"Project not found"})
+            if context.get("project_id") and project_id!=context["project_id"]:return self._send(403,{"error":"Forbidden"})
             return self._send(200,API_KEYS.usage_report(user["id"],project_id))
         return self._static(path)
     def do_DELETE(self):
@@ -136,13 +140,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404,{"error":"Not found"})
     def _stream_chat(self,data,messages,conversation_id,started,context):
         self.send_response(200); self.send_header("Content-Type","text/event-stream; charset=utf-8"); self.send_header("Cache-Control","no-cache, no-transform"); self.send_header("Connection","keep-alive"); self.send_header("Access-Control-Allow-Origin",self._origin()); self.send_header("Access-Control-Allow-Credentials","true"); self.end_headers()
-        answer=[]; usage={}; meta={}; ok=False
+        answer=[]; usage={}; meta={}
         try:
             for event in ROUTER.stream(messages,model=data.get("model") or None,temperature=data.get("temperature"),max_tokens=data.get("max_tokens")):
                 if event.get("type")=="delta":answer.append(event.get("content",""))
                 if event.get("type")=="usage":usage=event.get("usage") or usage
                 meta.update({k:event[k] for k in ("model","provider") if k in event}); self.wfile.write(("data: "+json.dumps(event,ensure_ascii=False)+"\n\n").encode()); self.wfile.flush()
-            ok=True; self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush(); result={"content":"".join(answer),"model":meta.get("model"),"provider":meta.get("provider"),"usage":usage}
+            self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush(); result={"content":"".join(answer),"model":meta.get("model"),"provider":meta.get("provider"),"usage":usage}
             STORE.record_request(user_id=context["user"]["id"],conversation_id=conversation_id,model=result.get("model"),provider=result.get("provider"),latency_ms=(time.perf_counter()-started)*1000,prompt_tokens=usage.get("prompt_tokens"),completion_tokens=usage.get("completion_tokens"),ok=True); self._record_usage(context,result,started,True)
             if conversation_id:STORE.save_conversation(context["user"]["id"],conversation_id,next((m.get("content","New chat") for m in messages if m.get("role")=="user"),"New chat"),messages+[{"role":"assistant","content":result["content"]}])
         except Exception as exc:
@@ -183,7 +187,9 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(title,str):return self._send(400,{"error":"title must be a string"})
             return self._send(201,{"id":STORE.save_conversation(user["id"],data.get("id"),title,messages)})
         if path!="/api/chat":return self._send(404,{"error":"Not found"})
-        context=self._auth_context()
+        requested_project=data.get("project_id")
+        if requested_project is not None and not isinstance(requested_project,str):return self._send(400,{"error":"project_id must be a string"})
+        context=self._auth_context(requested_project)
         if not context:return
         if not self._quota_preflight(context):return
         started=time.perf_counter(); conversation_id=None
