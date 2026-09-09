@@ -10,6 +10,7 @@ venv/
 
 # Datos locales del router
 usage.json
+router_web.sqlite3
 
 # Sistema
 .DS_Store
